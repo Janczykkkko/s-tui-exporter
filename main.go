@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"os/exec"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/crypto/ssh"
 )
 
 var (
@@ -21,44 +20,11 @@ var (
 )
 
 func getPackagePower() (float64, error) {
-	// Retrieve environment variables
-	hostname := os.Getenv("REMOTE_HOST")
-	username := os.Getenv("REMOTE_USERNAME")
-	password := os.Getenv("REMOTE_PASSWORD")
-
-	// Check if variables are set
-	if hostname == "" || username == "" || password == "" {
-		log.Fatal("Required environment variables not set!")
-	}
-
-	// SSH configuration
-	config := &ssh.ClientConfig{
-		User: username,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	// SSH connection
-	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", hostname), config)
-	if err != nil {
-		return 0, fmt.Errorf("failed to dial: %v", err)
-	}
-	defer client.Close()
-
-	// Create a session
-	session, err := client.NewSession()
-	if err != nil {
-		return 0, fmt.Errorf("failed to create session: %v", err)
-	}
-	defer session.Close()
-
-	// Command to execute
-	cmd := "s-tui -j"
+	// Command to execute locally
+	cmd := exec.Command("s-tui", "-j")
 
 	// Run the command
-	output, err := session.CombinedOutput(cmd)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, fmt.Errorf("failed to run command: %v", err)
 	}
@@ -81,7 +47,7 @@ func getPackagePower() (float64, error) {
 		return 0, fmt.Errorf("failed to convert power value: %v", err)
 	}
 
-	log.Printf("Request to %s completed succesfully", hostname)
+	log.Printf("Command execution completed successfully")
 
 	return power, nil
 }
@@ -100,7 +66,7 @@ func main() {
 	})
 
 	go func() {
-		log.Fatal(r.Run(":8080"))
+		log.Fatal(r.Run(":8081"))
 	}()
 
 	select {}
