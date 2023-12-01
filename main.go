@@ -3,15 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"log"
 	"net/http"
 	"os/exec"
 	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"golang.org/x/crypto/ssh"
 )
 
 type SystemStatus struct {
@@ -26,7 +23,7 @@ func main() {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Errorf("failed to run command: %v", err)
+		fmt.Printf("failed to run command: %v", err)
 	}
 
 	var status SystemStatus
@@ -68,17 +65,5 @@ func main() {
 
 	// Serve the metrics
 	http.Handle("/metrics", promhttp.Handler())
-	http.ListenAndServe(":8080", nil)
-}
-
-func readPrivateKey(keyPath string) ssh.Signer {
-	key, err := ioutil.ReadFile(keyPath)
-	if err != nil {
-		log.Fatalf("Unable to read private key: %v", err)
-	}
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		log.Fatalf("Unable to parse private key: %v", err)
-	}
-	return signer
+	http.ListenAndServe(":8082", nil)
 }
