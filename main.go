@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os/exec"
 	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -18,78 +19,71 @@ type SystemStatus struct {
 	Power     map[string]string `json:"Power"`
 }
 
-func main() {
-	cmd := exec.Command("s-tui", "-j")
+func updateMetrics() {
+	for {
+		cmd := exec.Command("s-tui", "-j")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Printf("failed to run command: %v", err)
+			continue
+		}
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Printf("failed to run command: %v", err)
+		var status SystemStatus
+		if err := json.Unmarshal([]byte(output), &status); err != nil {
+			fmt.Println("Error:", err)
+			continue
+		}
+
+		updateMetric(frequencyMetric, status.Frequency, "core")
+		updateMetric(tempMetric, status.Temp, "sensor")
+		updateMetric(powerMetric, status.Power, "sensor")
+		updateMetric(utilMetric, status.Util, "core")
+
+		time.Sleep(30 * time.Second)
 	}
+}
 
-	var status SystemStatus
-	if err := json.Unmarshal([]byte(output), &status); err != nil {
-		fmt.Println("Error:", err)
-		return
+func updateMetric(metric *prometheus.GaugeVec, data map[string]string, labelName string) {
+	for key, value := range data {
+		val, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			fmt.Printf("Error parsing %s value: %v\n", labelName, err)
+			continue
+		}
+		metric.With(prometheus.Labels{labelName: key}).Set(val)
 	}
+}
 
-	// Convert your dynamic maps to Prometheus metrics
-	frequencyMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+var (
+	frequencyMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "s_tui_frequency_data",
 		Help: "Frequency data from the system",
 	}, []string{"core"})
-	for key, value := range status.Frequency {
-		val, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			fmt.Println("Error parsing frequency value:", err)
-			continue
-		}
-		frequencyMetric.With(prometheus.Labels{"core": key}).Set(val)
-	}
 
-	tempMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	tempMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "s_tui_temperature_data",
 		Help: "Temperature data from the system",
 	}, []string{"sensor"})
-	for key, value := range status.Temp {
-		val, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			fmt.Println("Error parsing temperature value:", err)
-			continue
-		}
-		tempMetric.With(prometheus.Labels{"sensor": key}).Set(val)
-	}
-	powerMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+
+	powerMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "s_tui_power_data",
 		Help: "Power data from the system",
 	}, []string{"sensor"})
-	for key, value := range status.Power {
-		val, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			fmt.Println("Error parsing power value:", err)
-			continue
-		}
-		powerMetric.With(prometheus.Labels{"sensor": key}).Set(val)
-	}
 
-	utilMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+	utilMetric = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "s_tui_utilisation_data",
 		Help: "Utilisation data from the system",
 	}, []string{"core"})
-	for key, value := range status.Util {
-		val, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			fmt.Println("Error parsing power value:", err)
-			continue
-		}
-		utilMetric.With(prometheus.Labels{"core": key}).Set(val)
-	}
+)
 
-	// Register the metrics with the Prometheus collector
+func main() {
 	prometheus.MustRegister(frequencyMetric)
 	prometheus.MustRegister(tempMetric)
 	prometheus.MustRegister(powerMetric)
 	prometheus.MustRegister(utilMetric)
-	// Serve the metrics
+
+	go updateMetrics()
+
 	http.Handle("/metrics", promhttp.Handler())
 	http.ListenAndServe(":8081", nil)
 }
