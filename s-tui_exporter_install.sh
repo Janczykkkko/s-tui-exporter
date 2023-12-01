@@ -15,6 +15,8 @@ check_install() {
             sudo apt-get install -y "$package"
         elif [[ $(command -v yum) ]]; then
             sudo yum install -y "$package"
+        elif [[ $(command -v zypper) ]]; then
+            zypper install -y "$package"
         else
             echo "Package manager not found. Please install $package manually."
             exit 1
@@ -49,10 +51,10 @@ git clone https://github.com/Janczykkkko/s-tui-exporter.git
 cd s-tui-exporter || exit
 go build
 chmod +x s-tui-exporter
-sudo mv s-tui-exporter /usr/local/bin/
+mv s-tui-exporter /usr/local/bin/
 
 # Create systemd service
-sudo tee /etc/systemd/system/s-tui-exporter.service > /dev/null <<EOF
+tee /etc/systemd/system/s-tui-exporter.service > /dev/null <<EOF
 [Unit]
 Description=s-tui prometheus exporter service
 After=network.target
@@ -68,8 +70,8 @@ WantedBy=multi-user.target
 EOF
 
 # Reload systemd, enable, and start the service
-sudo systemctl daemon-reload
-sudo systemctl enable s-tui-exporter.service
-sudo systemctl start s-tui-exporter.service
+systemctl daemon-reload
+systemctl enable s-tui-exporter.service
+systemctl start s-tui-exporter.service
 
 echo "Setup complete. Service 's-tui-exporter' is enabled and running."
