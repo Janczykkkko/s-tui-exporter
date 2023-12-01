@@ -34,7 +34,7 @@ func main() {
 
 	// Convert your dynamic maps to Prometheus metrics
 	frequencyMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "frequency_data",
+		Name: "s_tui_frequency_data",
 		Help: "Frequency data from the system",
 	}, []string{"core"})
 	for key, value := range status.Frequency {
@@ -47,7 +47,7 @@ func main() {
 	}
 
 	tempMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "temperature_data",
+		Name: "s_tui_temperature_data",
 		Help: "Temperature data from the system",
 	}, []string{"sensor"})
 	for key, value := range status.Temp {
@@ -58,12 +58,38 @@ func main() {
 		}
 		tempMetric.With(prometheus.Labels{"sensor": key}).Set(val)
 	}
+	powerMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "s_tui_power_data",
+		Help: "Power data from the system",
+	}, []string{"sensor"})
+	for key, value := range status.Power {
+		val, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			fmt.Println("Error parsing power value:", err)
+			continue
+		}
+		powerMetric.With(prometheus.Labels{"sensor": key}).Set(val)
+	}
+
+	utilMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "s_tui_utilisation_data",
+		Help: "Utilisation data from the system",
+	}, []string{"core"})
+	for key, value := range status.Util {
+		val, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			fmt.Println("Error parsing power value:", err)
+			continue
+		}
+		utilMetric.With(prometheus.Labels{"core": key}).Set(val)
+	}
 
 	// Register the metrics with the Prometheus collector
 	prometheus.MustRegister(frequencyMetric)
 	prometheus.MustRegister(tempMetric)
-
+	prometheus.MustRegister(powerMetric)
+	prometheus.MustRegister(utilMetric)
 	// Serve the metrics
 	http.Handle("/metrics", promhttp.Handler())
-	http.ListenAndServe(":8082", nil)
+	http.ListenAndServe(":8081", nil)
 }
