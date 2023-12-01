@@ -3,71 +3,82 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os/exec"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/crypto/ssh"
 )
 
-var (
-	proxTemp = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "proxhost temp",
-		Help: "xd",
-	})
-)
-
-func getPackagePower() (float64, error) {
-	// Command to execute locally
-	cmd := exec.Command("s-tui", "-j")
-
-	// Run the command
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return 0, fmt.Errorf("failed to run command: %v", err)
-	}
-
-	// Parsing JSON to extract Package Power
-	var data map[string]interface{}
-	err = json.Unmarshal(output, &data)
-	if err != nil {
-		return 0, fmt.Errorf("failed to unmarshal JSON: %v", err)
-	}
-
-	// Extracting Package Power metric
-	powerVal, ok := data["Power"].(map[string]interface{})["package-0,0"]
-	if !ok {
-		return 0, fmt.Errorf("package Power not found in JSON")
-	}
-
-	power, err := strconv.ParseFloat(powerVal.(string), 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to convert power value: %v", err)
-	}
-
-	log.Printf("Command execution completed successfully")
-
-	return power, nil
+type SystemStatus struct {
+	Frequency map[string]string `json:"Frequency"`
+	Temp      map[string]string `json:"Temp"`
+	Util      map[string]string `json:"Util"`
+	Power     map[string]string `json:"Power"`
 }
 
 func main() {
-	r := gin.Default()
+	cmd := exec.Command("s-tui", "-j")
 
-	r.GET("/metrics", func(c *gin.Context) {
-		power, err := getPackagePower()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Errorf("failed to run command: %v", err)
+	}
+
+	var status SystemStatus
+	if err := json.Unmarshal([]byte(output), &status); err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	// Convert your dynamic maps to Prometheus metrics
+	frequencyMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "frequency_data",
+		Help: "Frequency data from the system",
+	}, []string{"core"})
+	for key, value := range status.Frequency {
+		val, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			c.String(http.StatusInternalServerError, "Error getting power metric")
-			return
+			fmt.Println("Error parsing frequency value:", err)
+			continue
 		}
-		proxTemp.Set(float64(power))
-		c.String(http.StatusOK, "prox_power %f", power)
-	})
+		frequencyMetric.With(prometheus.Labels{"core": key}).Set(val)
+	}
 
-	go func() {
-		log.Fatal(r.Run(":8081"))
-	}()
+	tempMetric := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "temperature_data",
+		Help: "Temperature data from the system",
+	}, []string{"sensor"})
+	for key, value := range status.Temp {
+		val, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			fmt.Println("Error parsing temperature value:", err)
+			continue
+		}
+		tempMetric.With(prometheus.Labels{"sensor": key}).Set(val)
+	}
 
-	select {}
+	// Register the metrics with the Prometheus collector
+	prometheus.MustRegister(frequencyMetric)
+	prometheus.MustRegister(tempMetric)
+
+	// Serve the metrics
+	http.Handle("/metrics", promhttp.Handler())
+	http.ListenAndServe(":8080", nil)
+}
+
+func readPrivateKey(keyPath string) ssh.Signer {
+	key, err := ioutil.ReadFile(keyPath)
+	if err != nil {
+		log.Fatalf("Unable to read private key: %v", err)
+	}
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		log.Fatalf("Unable to parse private key: %v", err)
+	}
+	return signer
 }
